@@ -142,6 +142,24 @@ def build_image_content(images: list, provider: str) -> list[dict]:
     ]
 
 
+def _apply_provider_kwargs(kwargs: dict, provider: str, config: dict) -> None:
+    """Apply provider-specific completion parameters in place.
+
+    anthropic: max_tokens is required, not optional, by their API.
+    ollama: hybrid-reasoning models (qwen3, qwen3.5) spend the whole context on
+        <think> tokens and get truncated before emitting any JSON, which surfaces
+        as instructor's "output is incomplete due to a max_tokens length limit".
+        reasoning_effort turns thinking off. Set ai.reasoning_effort to "" to
+        re-enable it for models that need it.
+    """
+    if provider == "anthropic":
+        kwargs["max_tokens"] = 1024
+    elif provider == "ollama":
+        effort = config["ai"].get("reasoning_effort", "none")
+        if effort:
+            kwargs["reasoning_effort"] = effort
+
+
 def extract_metadata_from_text(text: str, config: dict) -> DocumentMetadata:
     """Extract document metadata from text using an LLM."""
     client = get_instructor_client(config)
@@ -158,9 +176,7 @@ def extract_metadata_from_text(text: str, config: dict) -> DocumentMetadata:
         ],
     }
 
-    # Anthropic uses max_tokens instead of being optional
-    if provider == "anthropic":
-        kwargs["max_tokens"] = 1024
+    _apply_provider_kwargs(kwargs, provider, config)
 
     return client.chat.completions.create(**kwargs)
 
@@ -186,8 +202,7 @@ def extract_metadata_from_images(images: list, config: dict) -> DocumentMetadata
         ],
     }
 
-    if provider == "anthropic":
-        kwargs["max_tokens"] = 1024
+    _apply_provider_kwargs(kwargs, provider, config)
 
     return client.chat.completions.create(**kwargs)
 
@@ -227,8 +242,7 @@ def extract_metadata_from_text_and_images(
         ],
     }
 
-    if provider == "anthropic":
-        kwargs["max_tokens"] = 1024
+    _apply_provider_kwargs(kwargs, provider, config)
 
     return client.chat.completions.create(**kwargs)
 

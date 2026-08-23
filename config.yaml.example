@@ -9,6 +9,10 @@ ai:
   base_url: ""                    # Custom base URL (optional, for proxies)
   temperature: 0.0                # 0.0 = deterministic
   max_retries: 2                  # Retry failed API calls
+  reasoning_effort: "none"        # ollama only: disables <think> on hybrid-reasoning
+                                  # models (qwen3, qwen3.5) that would otherwise spend
+                                  # the whole context reasoning and emit no JSON.
+                                  # Set to "" to let such models think.
 
 # --- API Key Options ---
 # You can store your API key in two ways:

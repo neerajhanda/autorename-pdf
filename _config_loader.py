@@ -38,6 +38,7 @@ DEFAULTS = {
         "base_url": "",
         "temperature": 0.0,
         "max_retries": 2,
+        "reasoning_effort": "none",
     },
     "pdf": {
         "max_pages": 3,
