@@ -21,6 +21,11 @@ from _document_processing import (
     write_empty_batch,
     _rename_with_retry,
 )
+from _utils import (
+    template_uses_extended_fields,
+    unknown_placeholders,
+    render_filename_template,
+)
 
 
 class TestHarmonizeCompanyName:
@@ -632,3 +637,107 @@ class TestWriteEmptyBatch:
         with open(log_path) as f:
             data = json.load(f)
         assert data["batches"][0]["undone"] is True
+
+
+class TestFilenameTemplate:
+    """output.filename_template controls field order, separators, and which fields appear."""
+
+    def _make_pdf(self, tmp_path, name="original.pdf"):
+        pdf_path = str(tmp_path / name)
+        with open(pdf_path, 'w') as f:
+            f.write("fake pdf")
+        return pdf_path
+
+    def test_default_template_matches_legacy_format(self, tmp_path, sample_config):
+        pdf_path = self._make_pdf(tmp_path)
+        result = rename_invoice(
+            pdf_path, "Acme", datetime.date(2024, 3, 15), "ER", sample_config
+        )
+        assert os.path.basename(result) == "20240315 Acme ER.pdf"
+
+    def test_custom_order_and_separator(self, tmp_path, sample_config):
+        sample_config["output"]["filename_template"] = "{date} - {sender} - {amount}"
+        pdf_path = self._make_pdf(tmp_path)
+        result = rename_invoice(
+            pdf_path, "Acme", datetime.date(2024, 3, 15), "ER", sample_config,
+            sender="United Airlines", amount="8,00 USD",
+        )
+        assert os.path.basename(result) == "20240315 - United Airlines - 8,00 USD.pdf"
+
+    def test_empty_field_does_not_leave_orphan_separator(self, tmp_path, sample_config):
+        sample_config["output"]["filename_template"] = "{date} - {recipient} - {sender} - {amount}"
+        pdf_path = self._make_pdf(tmp_path)
+        result = rename_invoice(
+            pdf_path, "Acme", datetime.date(2024, 3, 15), "ER", sample_config,
+            recipient="", sender="United", amount="",
+        )
+        assert os.path.basename(result) == "20240315 - United.pdf"
+
+    def test_all_optional_fields_empty_falls_back_to_date(self, tmp_path, sample_config):
+        sample_config["output"]["filename_template"] = "{date} - {sender}"
+        pdf_path = self._make_pdf(tmp_path)
+        result = rename_invoice(
+            pdf_path, "Acme", datetime.date(2024, 3, 15), "ER", sample_config, sender="",
+        )
+        assert os.path.basename(result) == "20240315.pdf"
+
+    def test_unknown_placeholder_renders_empty_instead_of_raising(self, tmp_path, sample_config):
+        sample_config["output"]["filename_template"] = "{date} {nope} {company}"
+        pdf_path = self._make_pdf(tmp_path)
+        result = rename_invoice(
+            pdf_path, "Acme", datetime.date(2024, 3, 15), "ER", sample_config
+        )
+        assert os.path.basename(result) == "20240315 Acme.pdf"
+
+    def test_custom_template_respects_length_budget(self, tmp_path, sample_config):
+        sample_config["output"]["filename_template"] = "{date} - {sender} - {recipient}"
+        pdf_path = self._make_pdf(tmp_path)
+        result = rename_invoice(
+            pdf_path, "Acme", datetime.date(2024, 3, 15), "ER", sample_config,
+            sender="S" * 200, recipient="R" * 200,
+        )
+        filename = os.path.basename(result)
+        assert len(filename) <= 255
+        # The date is never sacrificed to make room
+        assert filename.startswith("20240315")
+
+    def test_missing_date_uses_default_date(self, tmp_path, sample_config):
+        sample_config["output"]["filename_template"] = "{date} - {sender}"
+        pdf_path = self._make_pdf(tmp_path)
+        result = rename_invoice(
+            pdf_path, "Acme", None, "ER", sample_config, sender="United",
+        )
+        assert os.path.basename(result) == "00000000 - United.pdf"
+
+    def test_forbidden_chars_stripped_from_optional_fields(self, tmp_path, sample_config):
+        sample_config["output"]["filename_template"] = "{date} - {sender}"
+        pdf_path = self._make_pdf(tmp_path)
+        result = rename_invoice(
+            pdf_path, "Acme", datetime.date(2024, 3, 15), "ER", sample_config,
+            sender='Ac/me:In*c',
+        )
+        assert os.path.basename(result) == "20240315 - AcmeInc.pdf"
+
+
+class TestTemplateHelpers:
+    def test_detects_extended_fields(self):
+        assert not template_uses_extended_fields("{date} {company} {type}")
+        assert template_uses_extended_fields("{date} - {sender}")
+        assert template_uses_extended_fields("{amount}")
+
+    def test_unknown_placeholders_reported(self):
+        assert unknown_placeholders("{date} {company}") == set()
+        assert unknown_placeholders("{date} {bogus} {nope}") == {"bogus", "nope"}
+
+    def test_render_collapses_repeated_separators(self):
+        out = render_filename_template(
+            "{date} - {recipient} - {sender}",
+            {"date": "20240315", "recipient": "", "sender": "United"},
+        )
+        assert out == "20240315 - United"
+
+    def test_render_strips_trailing_separator(self):
+        out = render_filename_template(
+            "{date} - {sender}", {"date": "20240315", "sender": ""}
+        )
+        assert out == "20240315"

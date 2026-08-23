@@ -63,6 +63,18 @@ output:
   language: "English"             # Language for document type descriptions
   date_format: "%Y%m%d"          # strftime format for filenames (YYYYMMDD)
 
+  # Filename layout. Placeholders:
+  #   {date}      the parsed document date, formatted with date_format
+  #   {company}   the counterparty (your own company is deliberately excluded)
+  #   {type}      ER / AR for invoices, otherwise a short description
+  #   {recipient} the party the document is addressed to
+  #   {sender}    the party that issued the document
+  #   {amount}    total including currency, e.g. "1234,56 EUR"
+  # Empty fields collapse, so a missing {amount} leaves no dangling separator.
+  # recipient/sender/amount are only requested from the AI when the template
+  # uses them, so the default costs no extra tokens.
+  filename_template: "{date} {company} {type}"
+
 # Optional AI Prompt Extension
 # Add custom instructions to fine-tune extraction, e.g.:
 # prompt_extension: 'If it is an incoming or outgoing invoice, add the total amount like "ER 1234,56".'

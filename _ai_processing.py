@@ -14,6 +14,7 @@ import instructor
 from openai import OpenAI
 
 from _pdf_utils import ExtractionResult
+from _utils import DEFAULT_FILENAME_TEMPLATE, template_uses_extended_fields
 
 
 PROVIDER_BASE_URLS = {
@@ -35,6 +36,25 @@ class DocumentMetadata(BaseModel):
     document_type: str = Field(
         description="ER for incoming invoice, AR for outgoing invoice, or short descriptive type"
     )
+
+
+class DocumentMetadataExtended(DocumentMetadata):
+    """Adds the fields only needed when output.filename_template asks for them."""
+    recipient: str = Field(
+        default="", description="Party the document is addressed to, stripped of legal form"
+    )
+    sender: str = Field(
+        default="", description="Party that issued the document, stripped of legal form"
+    )
+    amount: str = Field(
+        default="", description="Total amount with currency, e.g. '1234,56 EUR'. Empty if none"
+    )
+
+
+def get_metadata_model(config: dict) -> type[DocumentMetadata]:
+    """Pick the response model matching the configured filename template."""
+    template = config.get("output", {}).get("filename_template", DEFAULT_FILENAME_TEMPLATE)
+    return DocumentMetadataExtended if template_uses_extended_fields(template) else DocumentMetadata
 
 
 def get_instructor_client(config: dict):
@@ -106,8 +126,25 @@ def build_system_prompt(config: dict) -> str:
         f"For incoming invoices (invoices my company receives) use the term '{er}' only, nothing more. "
         f"For outgoing invoices (invoices my company sends) use the term '{ar}', nothing more. "
         f"For all other document types, always find a short descriptive summary/subject in {lang} language.\n\n"
-        "If a value is not found, leave it empty."
     )
+
+    # Extended fields must be described before the "leave it empty" instruction:
+    # smaller local models otherwise read that as permission to skip them.
+    if template_uses_extended_fields(
+        config.get("output", {}).get("filename_template", DEFAULT_FILENAME_TEMPLATE)
+    ):
+        prompt += (
+            "recipient: The party the document is addressed to - the customer, "
+            "traveller or addressee. Strip the legal form. Fill this whenever the "
+            "document names who it is for.\n\n"
+            "sender: The company that issued the document. Strip the legal form. "
+            "Fill this whenever the document names an issuer.\n\n"
+            "amount: The grand total of the document including its currency, for "
+            "example \"1234,56 EUR\". Use the document's own decimal separator. "
+            "Fill this whenever the document states a total.\n\n"
+        )
+
+    prompt += "If a value is not found, leave it empty."
 
     if ext:
         prompt += f"\n\n{ext}"
@@ -167,7 +204,7 @@ def extract_metadata_from_text(text: str, config: dict) -> DocumentMetadata:
 
     kwargs = {
         "model": config["ai"]["model"],
-        "response_model": DocumentMetadata,
+        "response_model": get_metadata_model(config),
         "max_retries": config["ai"].get("max_retries", 2),
         "temperature": config["ai"].get("temperature", 0.0),
         "messages": [
@@ -190,7 +227,7 @@ def extract_metadata_from_images(images: list, config: dict) -> DocumentMetadata
 
     kwargs = {
         "model": config["ai"]["model"],
-        "response_model": DocumentMetadata,
+        "response_model": get_metadata_model(config),
         "max_retries": config["ai"].get("max_retries", 2),
         "temperature": config["ai"].get("temperature", 0.0),
         "messages": [
@@ -230,7 +267,7 @@ def extract_metadata_from_text_and_images(
 
     kwargs = {
         "model": config["ai"]["model"],
-        "response_model": DocumentMetadata,
+        "response_model": get_metadata_model(config),
         "max_retries": config["ai"].get("max_retries", 2),
         "temperature": config["ai"].get("temperature", 0.0),
         "messages": [

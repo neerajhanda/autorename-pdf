@@ -31,7 +31,14 @@ from _document_processing import (
     list_undo_batches,
     write_empty_batch,
 )
-from _utils import ExitCode, normalize_unicode
+from _utils import (
+    ExitCode,
+    normalize_unicode,
+    DEFAULT_FILENAME_TEMPLATE,
+    ALL_TEMPLATE_FIELDS,
+    template_placeholders,
+    unknown_placeholders,
+)
 from _version import VERSION
 
 
@@ -71,6 +78,9 @@ class FileResult:
     company: Optional[str] = None
     date: Optional[str] = None
     doc_type: Optional[str] = None
+    recipient: Optional[str] = None
+    sender: Optional[str] = None
+    amount: Optional[str] = None
     provider: Optional[str] = None
     model: Optional[str] = None
 
@@ -391,9 +401,18 @@ def process_pdf(
         result.date = parsed_date.isoformat() if parsed_date else None
         result.doc_type = metadata.document_type
 
+        # Present only when output.filename_template asks for them
+        recipient = getattr(metadata, "recipient", "")
+        sender = getattr(metadata, "sender", "")
+        amount = getattr(metadata, "amount", "")
+        result.recipient = recipient or None
+        result.sender = sender or None
+        result.amount = amount or None
+
         rename_result = rename_invoice(
             pdf_path, company_name, parsed_date, metadata.document_type,
             config, undo_log_path=undo_log_path, batch_id=batch_id, dry_run=dry_run,
+            recipient=recipient, sender=sender, amount=amount,
         )
 
         if rename_result is None:
@@ -679,6 +698,24 @@ def _validate_config(config: dict | None, config_path: str) -> dict:
             "field": "company.name",
             "level": "warning",
             "message": "Company name not configured. AI cannot distinguish incoming vs outgoing invoices.",
+        })
+
+    template = config.get("output", {}).get("filename_template", DEFAULT_FILENAME_TEMPLATE)
+    unknown = unknown_placeholders(template)
+    if unknown:
+        issues.append({
+            "field": "output.filename_template",
+            "level": "warning",
+            "message": (
+                f"Unknown placeholder(s) {sorted(unknown)} will render empty. "
+                f"Available: {list(ALL_TEMPLATE_FIELDS)}"
+            ),
+        })
+    if not template_placeholders(template):
+        issues.append({
+            "field": "output.filename_template",
+            "level": "error",
+            "message": "Template has no placeholders; every file would get the same name.",
         })
 
     valid = not any(i["level"] == "error" for i in issues)

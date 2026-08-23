@@ -11,6 +11,10 @@ export interface FileResult {
   company: string | null;
   date: string | null;
   doc_type: string | null;
+  // Only populated when output.filename_template requests them
+  recipient?: string | null;
+  sender?: string | null;
+  amount?: string | null;
   provider: string | null;
   model: string | null;
 }

@@ -11,6 +11,60 @@ import unicodedata
 UNKNOWN_VALUE = "Unknown"
 DEFAULT_DATE = "00000000"
 
+# Filename templating
+DEFAULT_FILENAME_TEMPLATE = "{date} {company} {type}"
+
+# Placeholders always available to a filename template.
+CORE_TEMPLATE_FIELDS = ("date", "company", "type")
+
+# Placeholders that require extra fields from the AI. Requesting these costs
+# tokens on every call, so they are only extracted when the template uses them.
+EXTENDED_TEMPLATE_FIELDS = ("recipient", "sender", "amount")
+
+ALL_TEMPLATE_FIELDS = CORE_TEMPLATE_FIELDS + EXTENDED_TEMPLATE_FIELDS
+
+# Characters treated as field separators when collapsing gaps left by empty fields
+_SEPARATOR_CHARS = r"\-\u2013\u2014_|\u00b7\u2022,;"
+
+
+def template_placeholders(template: str) -> set[str]:
+    """Return the set of {placeholder} names referenced by a filename template."""
+    return set(re.findall(r"\{(\w+)\}", template or ""))
+
+
+def unknown_placeholders(template: str) -> set[str]:
+    """Return placeholders in the template that this tool cannot fill."""
+    return template_placeholders(template) - set(ALL_TEMPLATE_FIELDS)
+
+
+def template_uses_extended_fields(template: str) -> bool:
+    """True when the template needs recipient/sender/amount from the AI."""
+    return bool(template_placeholders(template) & set(EXTENDED_TEMPLATE_FIELDS))
+
+
+def render_filename_template(template: str, values: dict) -> str:
+    """Fill a filename template, collapsing separators left behind by empty fields.
+
+    Unknown placeholders render as empty rather than raising, so a typo in
+    config degrades the filename instead of failing the whole run.
+    """
+    class _Blank(dict):
+        def __missing__(self, key):
+            return ""
+
+    try:
+        text = template.format_map(_Blank(values))
+    except (ValueError, IndexError):
+        # Malformed template (stray brace, bad format spec) - fall back
+        logging.warning(f"Invalid filename_template {template!r}; using default")
+        text = DEFAULT_FILENAME_TEMPLATE.format_map(_Blank(values))
+
+    # An empty field leaves an orphaned separator: "20260403 -  - Receipt"
+    text = re.sub(rf"\s*([{_SEPARATOR_CHARS}])\s*(?:[{_SEPARATOR_CHARS}]\s*)+", r" \1 ", text)
+    text = re.sub(r"\s+", " ", text)
+    text = re.sub(rf"^[\s{_SEPARATOR_CHARS}]+|[\s{_SEPARATOR_CHARS}]+$", "", text)
+    return text.strip()
+
 
 class ExitCode:
     """Process exit codes for structured CLI output."""

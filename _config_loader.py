@@ -12,6 +12,8 @@ from typing import Any
 
 import yaml
 
+from _utils import DEFAULT_FILENAME_TEMPLATE
+
 # Pattern for environment variable references: ${VAR_NAME}
 _ENV_VAR_PATTERN = re.compile(r"\$\{([^}]+)\}")
 
@@ -62,6 +64,7 @@ DEFAULTS = {
     "output": {
         "language": "English",
         "date_format": "%Y%m%d",
+        "filename_template": DEFAULT_FILENAME_TEMPLATE,
     },
     "prompt_extension": "",
 }

@@ -13,7 +13,15 @@ import time
 import dateparser
 from rapidfuzz.distance import JaroWinkler
 
-from _utils import UNKNOWN_VALUE, DEFAULT_DATE, is_valid_filename, sanitize_filename, normalize_unicode
+from _utils import (
+    UNKNOWN_VALUE,
+    DEFAULT_DATE,
+    DEFAULT_FILENAME_TEMPLATE,
+    is_valid_filename,
+    sanitize_filename,
+    normalize_unicode,
+    render_filename_template,
+)
 from _config_loader import load_company_names
 
 # Constants
@@ -76,6 +84,35 @@ def _rename_with_retry(src: str, dst: str, retries: int = 3, delay: float = 1.0)
                 )
 
 
+# 255 max filename - 4 (".pdf") - 6 ("_(999)") - 1 = 244 chars for the base name
+MAX_BASE_NAME = 244
+
+
+def _fit_to_budget(template: str, values: dict, max_len: int = MAX_BASE_NAME) -> str:
+    """Render the template, shortening the longest field until it fits on disk.
+
+    The date is never trimmed - a partial date is worse than a partial name.
+    """
+    base = render_filename_template(template, values)
+    if len(base) <= max_len:
+        return base
+
+    values = dict(values)
+    shortenable = [k for k in values if k != "date"]
+    # Bounded: each pass empties at most one field, so this cannot spin
+    for _ in range(len(shortenable) + 1):
+        if len(base) <= max_len:
+            return base
+        longest = max(shortenable, key=lambda k: len(values[k]))
+        if not values[longest]:
+            break
+        excess = len(base) - max_len
+        values[longest] = values[longest][:max(0, len(values[longest]) - excess)].rstrip()
+        base = render_filename_template(template, values)
+
+    return base[:max_len].rstrip()
+
+
 def rename_invoice(
     pdf_path: str,
     company_name: str,
@@ -85,12 +122,17 @@ def rename_invoice(
     undo_log_path: str = None,
     batch_id: str = None,
     dry_run: bool = False,
+    recipient: str = "",
+    sender: str = "",
+    amount: str = "",
 ) -> str | None:
     """Rename the document based on extracted information.
 
     Returns the new path on success, None on skip/error.
     """
-    date_format = config.get("output", {}).get("date_format", "%Y%m%d")
+    output_cfg = config.get("output", {})
+    date_format = output_cfg.get("date_format", "%Y%m%d")
+    template = output_cfg.get("filename_template", DEFAULT_FILENAME_TEMPLATE)
     pdf_path = normalize_unicode(pdf_path)
     company_name = sanitize_filename(normalize_unicode(company_name))
     document_type = sanitize_filename(normalize_unicode(document_type))
@@ -101,23 +143,19 @@ def rename_invoice(
     if not is_valid_filename(document_type):
         document_type = UNKNOWN_VALUE
 
-    if document_date:
-        base_name = f'{document_date.strftime(date_format)} {company_name} {document_type}'
-    else:
-        base_name = f'{DEFAULT_DATE} {company_name} {document_type}'
+    values = {
+        "date": document_date.strftime(date_format) if document_date else DEFAULT_DATE,
+        "company": company_name,
+        "type": document_type,
+        # Optional template fields: empty is legitimate, so no Unknown fallback
+        "recipient": sanitize_filename(normalize_unicode(recipient or "")),
+        "sender": sanitize_filename(normalize_unicode(sender or "")),
+        "amount": sanitize_filename(normalize_unicode(amount or "")),
+    }
 
-    # Guard against combined filename exceeding filesystem limits
-    # 255 max - 4 (.pdf) - 6 (_(999)) - 1 = 244 chars for base_name
-    max_base = 244
-    if len(base_name) > max_base:
-        excess = len(base_name) - max_base
-        truncated = company_name[:len(company_name) - excess].rstrip()
-        if not truncated.strip():
-            truncated = UNKNOWN_VALUE
-        if document_date:
-            base_name = f'{document_date.strftime(date_format)} {truncated} {document_type}'
-        else:
-            base_name = f'{DEFAULT_DATE} {truncated} {document_type}'
+    base_name = _fit_to_budget(template, values)
+    if not base_name:
+        base_name = UNKNOWN_VALUE
 
     new_name = normalize_unicode(f"{base_name}.pdf")
     new_path = os.path.join(os.path.dirname(pdf_path), new_name)
