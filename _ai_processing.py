@@ -136,7 +136,8 @@ def build_system_prompt(config: dict) -> str:
         prompt += (
             "recipient: The party the document is addressed to - the customer, "
             "traveller or addressee. Strip the legal form. Fill this whenever the "
-            "document names who it is for.\n\n"
+            "document names who it is for. Write a person's name as \"First Last\" "
+            "in normal capitalisation - never \"LAST/FIRST\" or all caps.\n\n"
             "sender: The company that issued the document. Strip the legal form. "
             "Fill this whenever the document names an issuer.\n\n"
             "amount: The grand total of the document including its currency, for "

@@ -13,6 +13,22 @@ ai:
                                   # models (qwen3, qwen3.5) that would otherwise spend
                                   # the whole context reasoning and emit no JSON.
                                   # Set to "" to let such models think.
+  #
+  # Why this exists: Ollama loads every model with a 4096-token context by
+  # default, regardless of what the model supports (qwen3.5 supports 256K).
+  # A thinking model burns that budget before producing JSON, and the failure
+  # surfaces as "output is incomplete due to a max_tokens length limit".
+  # num_ctx cannot be raised from here -- Ollama's OpenAI-compatible endpoint
+  # ignores it -- so either leave reasoning_effort at "none", or give the model
+  # room by baking a larger context into a derived model:
+  #
+  #   printf 'FROM qwen3.5:9B\nPARAMETER num_ctx 16384\n' > Modelfile
+  #   ollama create mymodel-16k -f Modelfile
+  #
+  # (This reuses the existing weights -- no re-download.)
+  #
+  # then set model to "mymodel-16k" and reasoning_effort to "". Thinking is
+  # noticeably more accurate on multi-field templates but much slower.
 
 # --- API Key Options ---
 # You can store your API key in two ways:
