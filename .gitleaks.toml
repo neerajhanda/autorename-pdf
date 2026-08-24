@@ -1,0 +1,23 @@
+# gitleaks configuration
+#
+# Extends the default ruleset rather than replacing it, so every upstream
+# detection stays active.
+#
+# The allowlist below matches one exact literal and nothing else. It is
+# deliberately NOT scoped by path: gitleaks OR-combines allowlist criteria,
+# so adding a `paths` clause would exempt every matching file from all
+# secret detection rather than narrowing the exemption.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = """
+Synthetic API key used by TestRedactConfig in tests/test_cli.py. The value is
+a fixture for the key-redaction feature itself: the test asserts that
+"sk-1234567890abcdef" renders as "sk-1...cdef". It is 19 characters, whereas
+real OpenAI keys are sk- plus 48, and its body is sequential digits followed
+by sequential hex letters. Introduced upstream, so it exists in commit
+history and cannot be resolved by editing the working tree.
+"""
+regexes = ['''^sk-1234567890abcdef$''']
