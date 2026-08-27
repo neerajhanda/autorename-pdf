@@ -55,6 +55,7 @@ The CLI works cross-platform via Python. The GUI and context menu are Windows-on
   - [Recommended Setups](#recommended-setups)
   - [Provider Models](#provider-models)
   - [Extraction Settings](#extraction-settings)
+  - [Output Filename Layout](#output-filename-layout)
 - [Usage](#usage)
   - [GUI](#gui)
   - [Context Menu](#context-menu)
@@ -143,12 +144,51 @@ ai:
   provider: "ollama"
   model: "qwen3:4b"            # fast, fits in 3 GB VRAM
   api_key: ""
+  reasoning_effort: "none"     # REQUIRED for qwen3 / qwen3.5 -- see below
 pdf:
-  ocr: true                    # PaddleOCR for scanned docs
+  ocr: "auto"                  # PaddleOCR only when the text layer is poor
   vision: false                # text models are faster
 ```
 
 **Cost:** Free. **Requires:** [Ollama](#ollama-setup) + PaddleOCR.
+
+> **`reasoning_effort` is not optional on reasoning models.** Ollama loads every
+> model with a **4096-token context** regardless of what the model supports, and a
+> hybrid-reasoning model (qwen3, qwen3.5) spends that entire budget on `<think>`
+> tokens before it emits any JSON. Every file then fails with
+> `The output is incomplete due to a max_tokens length limit` — a misleading
+> message, since nothing sets `max_tokens`; the real limit is the context window.
+> `reasoning_effort: "none"` fixes it. Intermediate values (`low`, `medium`) do
+> **not** — the setting is effectively binary at 4096 tokens.
+
+<details>
+<summary><strong>Trading speed for accuracy: letting the model think</strong></summary>
+
+Disabling reasoning costs some accuracy. On a multi-field
+[filename template](#output-filename-layout), a 9B model with reasoning off may
+return empty values for fields it can plainly see in the text.
+
+`num_ctx` cannot be raised through Ollama's OpenAI-compatible endpoint — it is
+silently ignored — so give the model room by baking a larger context into a
+derived model. This reuses the existing weights, so there is no re-download:
+
+```bash
+printf 'FROM qwen3.5:9B\nPARAMETER num_ctx 16384\n' > Modelfile
+ollama create mymodel-16k -f Modelfile
+```
+
+```yaml
+ai:
+  model: "mymodel-16k"
+  reasoning_effort: ""         # thinking ON
+```
+
+Measured on one page, warm model: reasoning off completes in **~2s**, reasoning
+on in **~54s**. Answer generation is identical (69 vs 77 tokens) — the whole
+difference is ~2,700 tokens of hidden reasoning, which also inflates the prompt
+on a second pass. Budget **55-120s per file**, varying by document.
+
+</details>
 
 ### Provider Models
 
@@ -158,7 +198,9 @@ pdf:
 | Anthropic | `claude-sonnet-4-6` | `claude-haiku-4-5-20251001` |
 | Gemini | `gemini-3.1-flash-lite` | `gemini-3-flash-preview` |
 | xAI | `grok-4.20-beta-0309-non-reasoning` | — |
-| Ollama | `qwen3:8b` | `qwen3:4b` / `llama3.2:3b` |
+| Ollama | `qwen3:8b`¹ | `qwen3:4b`¹ / `llama3.2:3b` |
+
+¹ Reasoning models — set `ai.reasoning_effort: "none"`, or they never emit output at Ollama's default context size.
 
 See `config.yaml.example` for full documentation of all settings.
 
@@ -176,6 +218,45 @@ See `config.yaml.example` for full documentation of all settings.
 - **`"auto"`** = run only when text quality falls below threshold
 
 All enabled sources are combined before sending to the AI — maximizing extraction accuracy.
+
+### Output Filename Layout
+
+`output.filename_template` controls field order, separators, and which fields
+appear. The default reproduces the classic `YYYYMMDD COMPANY DOCTYPE.pdf` layout:
+
+```yaml
+output:
+  date_format: "%Y%m%d"                          # strftime, applied to {date}
+  filename_template: "{date} {company} {type}"
+```
+
+| Placeholder | Meaning |
+|-------------|---------|
+| `{date}` | Document date, formatted with `date_format` |
+| `{company}` | The counterparty — your own company is deliberately excluded |
+| `{type}` | `ER` / `AR` for invoices, otherwise a short description |
+| `{recipient}` | The party the document is addressed to |
+| `{sender}` | The party that issued the document |
+| `{amount}` | Total including currency, e.g. `1234,56 EUR` |
+
+```yaml
+filename_template: "{date} - {sender} - {amount}"
+# -> 20260326 - Example Airlines - 11.00 USD.pdf
+```
+
+- **Empty fields collapse their separators**, so a document with no amount yields
+  `20260326 - Example Airlines.pdf` rather than a trailing ` - `.
+- **`{recipient}`, `{sender}` and `{amount}` are only requested from the AI when
+  your template uses them** — the default costs no extra tokens.
+- Filenames are truncated to fit the filesystem limit by shortening the longest
+  field; `{date}` is never trimmed.
+- `autorename-pdf config validate` reports unknown placeholders, and rejects a
+  template with no placeholders at all.
+
+> **On small local models:** every extra field is another chance to return an
+> empty value. If `{recipient}` or `{sender}` come back blank, that is usually
+> the model rather than the document — see
+> [Fully Offline](#fully-offline-max-privacy) on letting the model think.
 
 ## Usage
 
