@@ -20,22 +20,27 @@ Build the PyInstaller EXE and create the distribution ZIP.
 source venv/Scripts/activate
 ```
 
-2. Ensure dependencies are installed:
+2. Ensure dependencies are installed. PyInstaller lives in `requirements-dev.txt`,
+   not `requirements.txt` — installing only the latter fails the prerequisite check:
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 ```
 
 3. Run the build script:
 
 ```bash
-python build.py
+python build.py            # CLI + GUI + ZIP, signed
+python build.py --nosign   # same, unsigned (no Azure Trusted Signing setup needed)
+python build.py --cli-only # CLI EXE only, skips GUI + packaging
 ```
 
 4. Verify the output:
-   - Check `dist/autorename-pdf.exe` exists
-   - Check the ZIP file was created with today's date
-   - Report the file sizes
+   - Check `Releases/AutoRename-PDF-Portable-{version}.zip` exists, where `{version}`
+     comes from `gui/package.json`. The ZIP is versioned, not dated.
+   - Do NOT look for `dist/autorename-pdf.exe` — the final `cleanup()` step deletes
+     `dist/` and `build/`. It only exists mid-build.
+   - Report the file size.
 
 5. If build fails:
    - Check for import errors or missing modules
@@ -44,6 +49,20 @@ python build.py
 
 ## Notes
 
-- Build includes code signing (requires certificate — will skip gracefully if unavailable)
-- The ZIP includes: EXE, setup.ps1, config.yaml.example, harmonized-company-names.yaml.example
+- Signing does **not** skip gracefully. If the Azure Trusted Signing DLib or
+  `metadata.json` is missing, `sign_file()` hard-exits with code 1. Use `--nosign`
+  when no signing setup is available.
+- The ZIP is flat and contains: `autorename-pdf-gui.exe`, `autorename-pdf-cli.exe`,
+  `setup.ps1`, `config.yaml.example`, `harmonized-company-names.yaml.example`, `.env.example`
 - Do NOT include config.yaml (contains API keys) in any build output
+
+## Prerequisites
+
+A full build needs all of these on Windows — `check_prerequisites()` fails fast if any are missing:
+
+| Tool | Needed for | Skipped by `--cli-only`? |
+|------|-----------|--------------------------|
+| PyInstaller | CLI EXE | No |
+| pnpm + Node | Tauri frontend | Yes |
+| Rust + MSVC toolchain | Tauri GUI compile | Yes |
+| signtool + Azure CodeSigning DLib | Signing | No (use `--nosign`) |
