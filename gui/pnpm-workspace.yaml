@@ -1,0 +1,21 @@
+# pnpm 10+ reads settings from this file. The `pnpm` field in package.json is
+# ignored, so the build-script allowlist lives here or these packages install
+# without running their postinstall (esbuild and sharp both need theirs to
+# fetch native binaries).
+#
+# `allowBuilds` is the pnpm 11 name; `onlyBuiltDependencies` is kept for pnpm 10.
+
+# Flat node_modules. `node-linker=hoisted` in .npmrc is no longer read by pnpm 11,
+# and without this the bare `@import "tailwindcss"` in src/css/index.css cannot
+# resolve — tailwindcss is a transitive dep of @tailwindcss/cli, not a direct one.
+nodeLinker: hoisted
+
+allowBuilds:
+  '@parcel/watcher': true
+  esbuild: true
+  sharp: true
+
+onlyBuiltDependencies:
+  - '@parcel/watcher'
+  - esbuild
+  - sharp
