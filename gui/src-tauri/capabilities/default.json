@@ -25,10 +25,6 @@
     "fs:allow-rename",
     "fs:allow-read-text-file",
     "fs:allow-write-text-file",
-    {
-      "identifier": "fs:scope",
-      "allow": [{ "path": "**" }]
-    },
     "opener:default"
   ]
 }

@@ -1,5 +1,5 @@
 import { getCurrentWebview } from '@tauri-apps/api/webview';
-import { expandFolder } from './filepicker';
+import { expandFolder, grantPathAccess } from './filepicker';
 
 export function setupDragDrop(
   onDrop: (paths: string[]) => void,
@@ -18,6 +18,10 @@ export function setupDragDrop(
           const dropped = event.payload.paths;
           const pdfFiles = dropped.filter((p: string) => p.toLowerCase().endsWith('.pdf'));
           const nonPdf = dropped.filter((p: string) => !p.toLowerCase().endsWith('.pdf'));
+
+          // Dropped files need access granted here; dropped folders get it
+          // inside expandFolder.
+          await grantPathAccess(pdfFiles);
 
           const expanded = await Promise.all(
             nonPdf.map(async (p: string) => {
