@@ -1,0 +1,23 @@
+# Normalize line endings on check-in. The repository stores LF; working trees
+# get whatever the platform prefers. Without this, editing a file on Windows
+# rewrites every line and buries the real change in the diff.
+* text=auto
+
+# Shell scripts must stay LF even on Windows; batch files must stay CRLF.
+*.sh   text eol=lf
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+
+# Never touch these -- auto-detection is good but explicit is better.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.icns binary
+*.pdf  binary
+*.exe  binary
+*.dll  binary
+*.zip  binary
+*.woff binary
+*.woff2 binary
