@@ -111,3 +111,6 @@ API keys are loaded from `.env` file (see `.env.example`). Ollama tests require 
 `setup.ps1` installs context menu entries and optionally PaddleOCR (~500MB).
 
 **GUI platform support**: Windows only. The Tauri GUI invokes the CLI as a sidecar binary (compiled EXE). Cross-platform would require PyInstaller builds for each target OS — the TypeScript/Rust code is already platform-agnostic.
+
+## Python
+Always use .venv/bin/python and .venv/bin/pip. Never use system python or pip.
